@@ -43,9 +43,15 @@ export default function plugin (options = {}) {
             ? sassConfig.includePaths.concat(paths)
             : paths
 
-      try {
-        let css = renderSync(sassConfig).css.toString()
-        let code = ''
+            try {
+                let result = renderSync(sassConfig);
+                let css = result.css.toString();
+                let code = '';
+                let imports = result.includePaths
+                        .map(function(file) {
+                            return "import \"" + file + "\";";
+                        })
+                        .join("\n");
 
         if (css.trim()) {
           if (isFunction(options.processor)) {
@@ -70,14 +76,14 @@ export default function plugin (options = {}) {
           }
         }
 
-        return {
-          code: `export default ${code};`,
-          map: { mappings: '' }
-        }
-      } catch (error) {
-        throw error
-      }
-    },
+                return {
+                    code: (imports.length ? imports + "\n" : "") + `export default ${code};`,
+                    map: { mappings: '' }
+                };
+            } catch (error) {
+                throw error;
+            }
+        },
 
     async ongenerate (opts, result) {
       if (!options.insert && (!styles.length || options.output === false)) {
@@ -87,6 +93,9 @@ export default function plugin (options = {}) {
       const css = styles.map((style) => {
         return style.content
       }).join('')
+
+      // Reset styles for next generation
+      styles.length = 0;
 
       if (isString(options.output)) {
         ensureFileSync(options.output, (err) => {
