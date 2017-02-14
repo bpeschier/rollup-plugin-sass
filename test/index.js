@@ -191,3 +191,18 @@ test('should insert CSS into head tag', t => {
     new Function(code)() // eslint-disable-line
   })
 })
+
+test('should expose included files', t => {
+    return rollup({
+        entry: 'fixtures/included/index.js',
+        plugins: [
+            sass({
+                options: sassOptions
+            })
+        ]
+    }).then(bundle => {
+        const code = bundle.generate().code.trim();
+        const style2 = readFileSync('fixtures/included/style2.scss').toString();
+        t.true(code.indexOf(style2.trim()) > -1);
+    });
+});

@@ -1,17 +1,18 @@
-import { dirname } from 'path'
-import { writeFileSync } from 'fs'
+import { dirname, relative } from 'path';
+import { writeFileSync, readFileSync } from 'fs';
 import { renderSync } from 'node-sass'
 import { isString, isFunction } from 'util'
 import { createFilter } from 'rollup-pluginutils'
 import { insertStyle } from './style.js'
 import { ensureFileSync } from 'fs-extra'
 
-export default function plugin (options = {}) {
-  const filter = createFilter(options.include || [ '**/*.sass', '**/*.scss' ], options.exclude || 'node_modules/**')
-  const insertFnName = '___$insertStyle'
-  const styles = []
-  const styleMaps = {}
-  let dest = ''
+export default function plugin(options = {}) {
+    const filter = createFilter(options.include || [ '**/*.sass', '**/*.scss' ], options.exclude || 'node_modules/**');
+    const insertFnName = '___$insertStyle';
+    const styles = [];
+    const deps = {};
+    const depInitial = [];
+    let dest = '';
 
   options.output = options.output || false
   options.insert = options.insert || false
@@ -31,13 +32,30 @@ export default function plugin (options = {}) {
       dest = opts.dest || opts.entry
     },
 
-    async transform (code, id) {
-      if (!filter(id)) {
-        return null
-      }
+        async transform(code, id) {
+            var isDep = deps.hasOwnProperty(id);
+            var initial = isDep && depInitial.indexOf(id) === -1;
 
-      const paths = [dirname(id), process.cwd()]
-      const sassConfig = Object.assign({ data: code }, options.options)
+            if (initial) {
+                // TODO: rollup directly pushes the imports, so we will just return
+                depInitial.push(id);
+                return {
+                    code: "",
+                    map: { mappings: ""}
+                }
+            }
+
+            if (!filter(id)) {
+                return null;
+            }
+
+            if (isDep) {
+                code = readFileSync(deps[id]).toString();
+                id = deps[id];
+            }
+
+            const paths = [dirname(id), process.cwd()];
+            const sassConfig = Object.assign({ data: code }, options.options);
 
       sassConfig.includePaths = sassConfig.includePaths
             ? sassConfig.includePaths.concat(paths)
@@ -47,11 +65,16 @@ export default function plugin (options = {}) {
                 let result = renderSync(sassConfig);
                 let css = result.css.toString();
                 let code = '';
-                let imports = result.includePaths
+                let imports = (isDep ? "" : result.stats.includedFiles
                         .map(function(file) {
-                            return "import \"" + file + "\";";
+                            return "import \"./" + relative(paths[0], file) + "\";";
                         })
-                        .join("\n");
+                        .join("\n"));
+
+
+                result.stats.includedFiles.forEach((f) => {
+                    deps[f] = id;
+                });
 
         if (css.trim()) {
           if (isFunction(options.processor)) {
